@@ -1,0 +1,18 @@
+Functions
+String
+Variable Names
+Input & Output
+Shallow copy vs Deep copy
+Argument Parsing
+Function
+Lists
+File read and write
+Bitwise
+Namespaces and Scope
+output
+Variables
+Precedence and Associativity
+Data Type
+Files
+Basic Operators
+Exception

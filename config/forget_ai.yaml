@@ -1,0 +1,65 @@
+model_family: mistral-7b
+model_path: "mistralai/Mistral-7B-Instruct-v0.3"
+from_hf_hub: true
+LoRA:
+  r: 8
+  alpha: 32
+  dropout: 0.05
+
+lr: 1e-5
+split: forget
+data_path: data/data_ai_v2  # 使用基于错误选项的「新版」数据集
+input_type: question
+sentence_chunk: -1
+retain_strength: 0.0
+beta: 0.1
+batch_size: 16
+gradient_accumulation_steps: 1
+num_epochs: 10
+forget_loss: intervention
+non_factual: false
+overwrite_dir: false
+seed: 42
+weight_decay: 0.01
+save_dir_root: results
+save_dir: ${save_dir_root}/${model_path}/${forget_loss}/${num_epochs}_${lr}_${split}
+
+eval:
+  retain_result: null
+  model_path: ${..model_path}
+  model_family: ${..model_family}
+  save_dir: ${..save_dir}
+  data_path: [data/data_ai_v2, data/data_ai_v2, data/data_ai_v2, data/data_ai_v2]
+  split: ${..split}_perturbed
+  split_list:
+    - retain_perturbed
+    - retain_perturbed
+    - retain_perturbed
+    - ${split}_perturbed
+
+  eval_task: [eval_log, eval_log_retain, eval_log_retain2, eval_log_forget]
+  question_key: [question, question, question, question]
+  answer_key: [answer, answer, answer, answer]
+  base_answer_key: [paraphrased_answer, answer, answer, paraphrased_answer]
+  perturbed_answer_key: [perturbed_answer, perturbed_answer, perturbed_answer, perturbed_answer]
+
+  generation:
+    max_length: 200
+    max_new_tokens: null
+
+  save_generated_text: true
+
+  ds_size: 500
+
+  overwrite: true
+  use_pretrained: false
+
+  batch_size: 30
+
+teacher:
+  N: 3  # 使用其他3个错误选项代替正确选项
+  counter_fact_prompt: false
+  change_name_back: true
+  whp_baseline: false
+  verbose: true
+

@@ -1,0 +1,16 @@
+ Object-Oriented Programming
+Control Flow & Loops
+Data Types
+Decorators
+Dictionaries and Sets
+Exception Handling
+Files & I/O
+Functions
+Import Package
+Lists
+Namespaces and Scope
+Operating System
+Python basis & Syntax
+Recursion
+Regular Expressions
+String
