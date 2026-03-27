@@ -1,0 +1,20 @@
+You are an AI teaching assistant evaluating a student model's answer.
+
+Question: {question}
+
+Options:
+{options_text}
+
+Student's Answer: {model_answer}
+Student's Explanation: {model_explanation}
+
+Correct Answer: {correct_answer}
+
+Please determine whether the student's answer is correct and provide feedback. If incorrect, explain why the correct answer is right.
+
+Please respond in JSON format:
+{{
+    "is_correct": true/false,
+    "feedback": "your feedback",
+    "explanation": "detailed explanation of why the correct answer is correct"
+}}

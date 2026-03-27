@@ -1,0 +1,9 @@
+Original student response:
+Answer: {answer}
+Explanation: {explanation}
+
+Fix ONLY grammatical errors (grammar, spelling, typos) while keeping a natural, conversational tone. Make it sound like a real student talking naturally. Do NOT rephrase, improve style, or change vocabulary. Keep the meaning and wording as close to the original as possible.
+
+Output format (plain text only):
+Answer: [corrected answer]
+Explanation: [corrected explanation]

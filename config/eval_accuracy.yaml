@@ -1,0 +1,12 @@
+# 准确率评估配置文件
+
+model_family: mistral-7b
+model_path: mistralai/Mistral-7B-Instruct-v0.3  # 要评估的模型路径
+data_path: data_construct/data/data_ai_progressive  # 数据路径
+split: forget_10  # 要评估的数据 split
+use_pretrained: false  # 是否使用预训练模型
+batch_size: 8
+max_samples: null  # 最大评估样本数，null 表示评估全部
+save_dir: null  # 结果保存目录，null 表示不保存
+save_details: true  # 是否保存详细结果
+

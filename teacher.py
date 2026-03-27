@@ -8,20 +8,15 @@ from functools import reduce
 from contextlib import contextmanager
 import copy
 
-# ============= 本地资源路径配置（必须在导入其他库之前设置） =============
-# 获取项目根目录
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-LOCAL_RESOURCES_DIR = os.path.join(PROJECT_ROOT, "local_resources")
+LOCAL_RESOURCES_DIR = "/root/autodl-tmp/local_resources"
 
-# 创建本地资源目录
 os.makedirs(LOCAL_RESOURCES_DIR, exist_ok=True)
 
-# 配置 NLTK 本地数据路径（下载也会保存到这里）
 NLTK_LOCAL_DIR = os.path.join(LOCAL_RESOURCES_DIR, "nltk_data")
 os.makedirs(NLTK_LOCAL_DIR, exist_ok=True)
 os.environ["NLTK_DATA"] = NLTK_LOCAL_DIR
 
-# 配置 HuggingFace 缓存路径（所有模型下载都会保存到这里）
 HF_LOCAL_DIR = os.path.join(LOCAL_RESOURCES_DIR, "huggingface_models")
 os.makedirs(HF_LOCAL_DIR, exist_ok=True)
 os.environ["HF_HOME"] = HF_LOCAL_DIR
@@ -29,49 +24,42 @@ os.environ["TRANSFORMERS_CACHE"] = HF_LOCAL_DIR
 os.environ["HUGGINGFACE_HUB_CACHE"] = HF_LOCAL_DIR
 os.environ["HF_DATASETS_CACHE"] = os.path.join(HF_LOCAL_DIR, "datasets")
 
-# 配置 Stanza 本地资源路径
 STANZA_LOCAL_DIR = os.path.join(LOCAL_RESOURCES_DIR, "stanza_resources")
 os.makedirs(STANZA_LOCAL_DIR, exist_ok=True)
 os.environ["STANZA_RESOURCES_DIR"] = STANZA_LOCAL_DIR
 
-# 配置 spaCy 本地模型路径
 SPACY_LOCAL_DIR = os.path.join(LOCAL_RESOURCES_DIR, "spacy_models", "en_core_web_sm")
 
-# 配置 TensorFlow/TensorBoard 日志路径
 TF_LOGS_DIR = os.path.join(LOCAL_RESOURCES_DIR, "tf_logs")
 os.makedirs(TF_LOGS_DIR, exist_ok=True)
 os.environ["TFHUB_CACHE_DIR"] = os.path.join(LOCAL_RESOURCES_DIR, "tfhub_cache")
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # 减少 TF 日志输出
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-# 配置 Torch Hub 缓存路径
 TORCH_HUB_DIR = os.path.join(LOCAL_RESOURCES_DIR, "torch_hub")
 os.makedirs(TORCH_HUB_DIR, exist_ok=True)
 os.environ["TORCH_HOME"] = TORCH_HUB_DIR
 
-# 配置 XDG 缓存目录（许多库会使用这个）
 XDG_CACHE_DIR = os.path.join(LOCAL_RESOURCES_DIR, "cache")
 os.makedirs(XDG_CACHE_DIR, exist_ok=True)
 os.environ["XDG_CACHE_HOME"] = XDG_CACHE_DIR
 
-# 配置 wandb 目录
 WANDB_DIR = os.path.join(PROJECT_ROOT, "wandb_logs")
 os.makedirs(WANDB_DIR, exist_ok=True)
 os.environ["WANDB_DIR"] = WANDB_DIR
 os.environ["WANDB_CACHE_DIR"] = os.path.join(LOCAL_RESOURCES_DIR, "wandb_cache")
 
-print(f"========== 资源目录配置 ==========")
-print(f"项目根目录: {PROJECT_ROOT}")
-print(f"本地资源目录: {LOCAL_RESOURCES_DIR}")
-print(f"NLTK 数据: {NLTK_LOCAL_DIR}")
-print(f"HuggingFace 模型: {HF_LOCAL_DIR}")
-print(f"Stanza 资源: {STANZA_LOCAL_DIR}")
+print(f"========== Resource directory config ==========")
+print(f"Project root: {PROJECT_ROOT}")
+print(f"Local resources: {LOCAL_RESOURCES_DIR}")
+print(f"NLTK data: {NLTK_LOCAL_DIR}")
+print(f"HuggingFace models: {HF_LOCAL_DIR}")
+print(f"Stanza resources: {STANZA_LOCAL_DIR}")
 print(f"Torch Hub: {TORCH_HUB_DIR}")
-print(f"TF 日志: {TF_LOGS_DIR}")
-print(f"XDG 缓存: {XDG_CACHE_DIR}")
-print(f"Wandb 日志: {WANDB_DIR}")
+print(f"TF logs: {TF_LOGS_DIR}")
+print(f"XDG cache: {XDG_CACHE_DIR}")
+print(f"Wandb logs: {WANDB_DIR}")
 print(f"==================================")
 
-# 现在导入其他库（环境变量已设置，下载会保存到项目目录）
 import torch
 import requests
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -84,30 +72,26 @@ from tqdm import tqdm
 import spacy
 import nltk
 
-# ============= Patch Stanza MD5 校验（解决服务器文件与元数据不匹配的问题）=============
-# 这是 Stanza 的一个已知问题：服务器上的模型文件已更新，但 resources.json 中的 MD5 是旧的
+# ============= Patch Stanza MD5 verification =============
 try:
     from stanza.resources import common as stanza_common
     _original_assert_file_exists = stanza_common.assert_file_exists
     
     def _patched_assert_file_exists(path, md5=None, alternate_md5=None):
-        """跳过 MD5 校验，只验证文件存在"""
+        """Skip MD5 verification, only check file existence."""
         if not os.path.exists(path):
             raise FileNotFoundError(f"Required Stanza resource not found: {path}")
-        # 文件存在就认为 OK，跳过 MD5 校验
     
     stanza_common.assert_file_exists = _patched_assert_file_exists
-    print("已禁用 Stanza MD5 校验（解决版本不匹配问题）")
+    print("Disabled Stanza MD5 verification (version mismatch workaround)")
 except Exception as e:
-    print(f"警告: 无法禁用 Stanza MD5 校验: {e}")
+    print(f"Warning: Could not disable Stanza MD5 verification: {e}")
 # =============================================================================
 
-# 设置 NLTK 数据路径
 nltk.data.path.insert(0, NLTK_LOCAL_DIR)
 
 from utils import get_model_identifiers_from_yaml, split_document, replace_name, replace_name_only_first_n
 
-# 导入 NLTK 模块（在设置路径后）
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 
@@ -120,8 +104,6 @@ except ImportError:  # pragma: no cover - version-dependent compatibility
     class DownloadMethod:  # type: ignore
         REUSE_RESOURCES = None
         NONE = None
-
-# 注：不再使用 coref，无需 PyTorch 2.6 兼容性修复
 
 
 @contextmanager
@@ -140,8 +122,6 @@ def _stanza_weights_only_compat():
         torch.load = original_torch_load
 
 
-# Stanza 资源目录：始终使用项目目录下的 local_resources/stanza_resources
-# （环境变量 STANZA_RESOURCES_DIR 已在文件开头设置）
 STANZA_RESOURCES_DIR = STANZA_LOCAL_DIR
 STANZA_RESOURCES_JSON = os.path.join(STANZA_RESOURCES_DIR, "resources.json")
 
@@ -169,15 +149,13 @@ def _instantiate_stanza_pipeline(processors: str, download_method: DownloadMetho
 
 
 def _load_stanza_pipeline(processors: str):
-    # 如果本地资源存在，优先使用 DownloadMethod.NONE 跳过 MD5 校验
-    # 这样可以避免因 Stanza 版本不同导致的 MD5 不匹配错误
+    """Load Stanza pipeline with local resource fallback."""
     if os.path.exists(STANZA_RESOURCES_JSON):
         try:
             return _instantiate_stanza_pipeline(processors, DownloadMethod.NONE)
         except Exception as e:
-            tqdm.write(f"使用本地 Stanza 资源失败: {e}，尝试重新下载...")
+            tqdm.write(f"Failed to use local Stanza resources: {e}, retrying with download...")
     
-    # 本地资源不存在或加载失败，尝试下载
     try:
         return _instantiate_stanza_pipeline(
             processors, DownloadMethod.REUSE_RESOURCES
@@ -189,30 +167,24 @@ def _load_stanza_pipeline(processors: str):
             "on a machine with internet access once and retry."
         ) from err
     except ValueError as err:
-        # MD5 校验失败，尝试强制使用本地资源
         if "md5" in str(err).lower() and os.path.exists(STANZA_RESOURCES_JSON):
             tqdm.write(
-                "Stanza MD5 校验失败（可能是版本不匹配），强制使用本地资源..."
+                "Stanza MD5 verification failed (possible version mismatch), forcing local resources..."
             )
             return _instantiate_stanza_pipeline(processors, DownloadMethod.NONE)
         raise
 
 counterfact_prompt = "Complete the following passage about {replace_ent}."
 
-# 不再使用 coref（共指消解），原因：
-# 1. AI 知识点数据集不需要（概念词不存在代词指代）
-# 2. TOFU 数据集也有 fallback 机制
-# 3. 加快加载速度，减少依赖问题
 nlp = _load_stanza_pipeline("tokenize,ner")
-nlp_nocoref = nlp  # 统一使用同一个 pipeline
+nlp_nocoref = nlp
 
-# 加载 spaCy 模型：优先从本地目录加载
 if os.path.exists(SPACY_LOCAL_DIR):
     spacynlp = spacy.load(SPACY_LOCAL_DIR)
-    print(f"使用本地 spaCy 模型: {SPACY_LOCAL_DIR}")
+    print(f"Using local spaCy model: {SPACY_LOCAL_DIR}")
 else:
     spacynlp = spacy.load("en_core_web_sm")
-    print("使用系统安装的 spaCy 模型: en_core_web_sm")
+    print("Using system spaCy model: en_core_web_sm")
 
 stop_word_list = set(stopwords.words("english")).union(
     spacynlp.Defaults.stop_words
@@ -220,6 +192,7 @@ stop_word_list = set(stopwords.words("english")).union(
 
 
 def find_non_ascii(s):
+    """Find non-ASCII spans in a string."""
     indices = []
     start = None
     for i, c in enumerate(s):
@@ -241,23 +214,17 @@ def find_non_ascii(s):
 
 
 def get_target_ent_mentions(document, title, target_type='person'):
-    """Find mentions of the target entity in the document.
-    
-    简化版本：不使用 coref（共指消解），仅使用 NER 和字符串匹配。
-    对于 AI 知识点数据集完全足够，对于 TOFU 也能正常工作。
-    """
+    """Find mentions of the target entity in the document."""
     # clean format for stanza
     if '==\n' in document:
         stanza_content = document.replace('==\n', '==\n\n')
     else:
         stanza_content = document.replace('\n', '\n\n').replace('\n\n\n\n', '\n\n')
     
-    # 确保无论下面 try 是否成功，doc 至少被定义
     doc = None
     try:
         doc = nlp(stanza_content)
     except:
-        # stanza error
         stanza_content = document.split('\n\n\n')
         if len(stanza_content) > 1:
             stanza_content = stanza_content[:-1]
@@ -268,7 +235,6 @@ def get_target_ent_mentions(document, title, target_type='person'):
             pass
     
     if doc is None:
-        # 如果 Stanza 完全解析失败，退化为简单的字符串匹配
         print(f"Error in processing {title} with Stanza, fallback to simple string search.")
         for word in title.split():
             if word in document:
@@ -277,33 +243,27 @@ def get_target_ent_mentions(document, title, target_type='person'):
                          'prefix': document[:document.index(word)]}], [title]
         return [{'mention': title, 'position': -1, 'prefix': document}], [title]
     
-    # 直接使用 NER 实体和字符串匹配（不使用 coref）
     target_ents = []
     ents = [ent for ent in doc.ents if len(ent.text) > 1]
     
-    # 1. 检查 NER 实体是否与 title 匹配
     for ent in ents:
-        ent_text_clean = ent.text.replace("'s", "").replace("'s", "").lower().strip()
+        ent_text_clean = ent.text.replace("'s", "").replace("\u2019s", "").lower().strip()
         if ent_text_clean in title.lower() or title.lower() in ent_text_clean:
             target_ents.append({'mention': ent.text, 'position': ent.start_char, 'prefix': stanza_content[:ent.start_char]})
     
-    # 2. 如果是 person 类型，也检查 PERSON 类型的实体
     if target_type == 'person':
         person_ents = [ent for ent in doc.ents if ent.type == 'PERSON']
         for ent in person_ents:
-            # 检查是否与 title 的任何部分匹配
             if any(word.lower() in ent.text.lower() for word in title.split()):
                 if not any(ent.start_char == e['position'] for e in target_ents):
                     target_ents.append({'mention': ent.text, 'position': ent.start_char, 'prefix': stanza_content[:ent.start_char]})
     
-    # 3. 如果没有找到任何实体，用简单字符串匹配
     if len(target_ents) == 0:
         for word in title.split():
             if word in document:
                 return [{'mention': title, 'position': document.index(word), 'prefix': document[:document.index(word)]}], [title]
         return [{'mention': title, 'position': -1, 'prefix': document}], [title]
     
-    # 收集所有提及文本
     target_ent_mention_texts = [i['mention'] for i in target_ents]
     target_ent_mention_texts = list(set(target_ent_mention_texts))
     target_ent_mention_texts = sorted(target_ent_mention_texts, key=lambda x: len(x), reverse=True)
@@ -312,6 +272,7 @@ def get_target_ent_mentions(document, title, target_type='person'):
 
 
 def get_book_names(document, additional_target_type, title, replace_book_names):
+    """Find book/work-of-art entity mentions and their replacements in a document."""
     work_of_art_ent_positions = []
     work_of_art_replace_name = dict()
     if len(additional_target_type) > 0:
@@ -319,12 +280,12 @@ def get_book_names(document, additional_target_type, title, replace_book_names):
         additional_targets = [ent for ent in doc.ents if ent.type in additional_target_type and len(ent.text.split()) > 1]
         
         # clean results where "XX's" is recognized as WORK_OF_ART
-        additional_targets = [ent for ent in additional_targets if not ((ent.text.endswith("'s") or ent.text.endswith("’s")) and any([w in ent.text for w in title.split()]))]
+        additional_targets = [ent for ent in additional_targets if not ((ent.text.endswith("'s") or ent.text.endswith("\u2019s")) and any([w in ent.text for w in title.split()]))]
         additional_targets = [ent for ent in additional_targets if all([i not in word_tokenize(ent.text.lower()) for i in ['award', 'prize', 'ph.d.']])]
         for each_ent in additional_targets:
             # clean results where person names are included in WORK_OF_ART entities
             each_ent_text = each_ent.text.strip()
-            for strip_name in [f"{title}'s", f"{title}’s", title]:
+            for strip_name in [f"{title}\u2019s", f"{title}'s", title]:
                 if each_ent_text.endswith(strip_name):
                     each_ent_text = each_ent_text.rstrip(strip_name).strip()
                 if each_ent_text.startswith(strip_name):
@@ -371,6 +332,7 @@ def get_book_names(document, additional_target_type, title, replace_book_names):
 
 
 def get_target_ent_text_indices(tokenizer, original_ids, target_ent_mention_texts):
+    """Find token indices where target entity mentions start."""
     # all anchor mentions, including pronouns
     target_text_starts = []
     if len(target_ent_mention_texts) > 0:
@@ -383,6 +345,7 @@ def get_target_ent_text_indices(tokenizer, original_ids, target_ent_mention_text
 
 
 def get_ent_indices(named_ents, original_ids, tokenizer):
+    """Find token spans for named entities in tokenized text."""
     ent_spans = []
     if len(named_ents) > 0:
         for i in range(1, len(original_ids)):
@@ -400,6 +363,7 @@ def get_ent_indices(named_ents, original_ids, tokenizer):
 
 
 def move_probability_to_original_name(match_probs, modify_index, gt_token_id, adjust_ent_first_token_ids):
+    """Redistribute probability mass from replacement entity tokens to original entity token."""
     for id_to_reduce in adjust_ent_first_token_ids:
         if id_to_reduce == gt_token_id:
             continue
@@ -408,8 +372,9 @@ def move_probability_to_original_name(match_probs, modify_index, gt_token_id, ad
             match_probs[modify_index, id_to_reduce] = 1e-8
 
 
-@hydra.main(version_base=None, config_path="config", config_name="forget_wpu")
+@hydra.main(version_base=None, config_path="config", config_name="forget_ai")
 def main(cfg):
+    """Construct teacher distribution for knowledge unlearning."""
     teacher_cfg = cfg.teacher
     model_cfg = get_model_identifiers_from_yaml(cfg.model_family)
     model_id = model_cfg["hf_key"]
@@ -426,43 +391,44 @@ def main(cfg):
         print(f"========== {save_name} already exists ==========")
         return
 
-    # 检查本地 HuggingFace 模型路径
     local_model_path = os.path.join(HF_LOCAL_DIR, model_id.replace("/", "_"))
     if os.path.exists(local_model_path):
         tokenizer_path = local_model_path
-        print(f"使用本地 Tokenizer: {local_model_path}")
+        print(f"Using local tokenizer: {local_model_path}")
     else:
         tokenizer_path = model_id
-        print(f"从 HuggingFace Hub 加载 Tokenizer: {model_id}")
+        print(f"Loading tokenizer from HuggingFace Hub: {model_id}")
     
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    except Exception as e:
+        print(f"Failed to load local tokenizer: {e}")
+        print(f"Retrying download from HuggingFace Hub...")
+        tokenizer = AutoTokenizer.from_pretrained(model_id, force_download=True)
     tokenizer.pad_token = tokenizer.eos_token
 
     target_type = 'person'
     
-    # 自动检测本地还是远程数据集
     if os.path.exists(cfg.data_path):
-        # 本地数据集，使用 load_from_disk
-        print(f"========== 从本地加载数据集: {cfg.data_path} ==========")
+        print(f"========== Loading dataset from local path: {cfg.data_path} ==========")
         dataset = datasets.load_from_disk(cfg.data_path)[cfg.split]
     else:
-        # 远程数据集，使用 load_dataset
-        print(f"========== 从HuggingFace加载数据集: {cfg.data_path} ==========")
+        print(f"========== Loading dataset from HuggingFace: {cfg.data_path} ==========")
         dataset = datasets.load_dataset(cfg.data_path, cfg.split)['train']
     
     if 'data_ai' in cfg.data_path:
-        # AI知识点遗忘数据集
         forget_target_name = False
         additional_target_type = []
-        tofu = True  # 使用QA格式
-        replace_name_file = 'data/replace_knowledge_points.json'
-        # 加载知识点列表
+        tofu = True
+        if 'data_ai_progressive' in cfg.data_path:
+            replace_name_file = 'data_construct/data/replace_knowledge_points_v2.json'
+        else:
+            replace_name_file = 'data/replace_knowledge_points.json'
         with open('data/ai_knowledge_points.txt', 'r', encoding='utf-8') as f:
             forget_knowledge_points = [line.strip() for line in f if line.strip()]
-        # 使用title字段作为知识点
-        question_to_title = {item['question']: item['title'] for item in dataset}
-        titles = {item['title'] for item in dataset}
-        print(f"========== AI数据集: {len(titles)} 个知识点 ==========")
+        question_to_title = {item['question']: item['title'].strip() for item in dataset}
+        titles = {item['title'].strip() for item in dataset}
+        print(f"========== AI dataset: {len(titles)} knowledge points ==========")
     elif 'TOFU' in cfg.data_path:
         forget_target_name = True
         additional_target_type = ['WORK_OF_ART']
@@ -484,23 +450,23 @@ def main(cfg):
         forget_target_name = False
         additional_target_type = []
         tofu = False
-        titles = set(dataset['title'])
+        titles = {t.strip() if isinstance(t, str) else t for t in dataset['title']}
         replace_name_file = 'data/replace_name_forget_100.json'
     
     # get replacement names
     with open(replace_name_file, 'r') as f:
         replace_person_names = json.load(f)
         print(f"========== Loaded replace names from {replace_name_file} ==========")
-    replace_person_names = {k: v for k, v in replace_person_names.items() if k in titles}
+    replace_person_names = {k: v for k, v in replace_person_names.items() if k in titles and len(v) > 0}
+    missing_replacements = [t for t in titles if t not in replace_person_names]
+    if missing_replacements:
+        print(f"Warning: The following knowledge points have no replacement mapping and will be skipped: {missing_replacements}")
     for k in replace_person_names:
-        # 灵活处理：如果可用替换少于N，使用所有可用的
         available_replacements = len(replace_person_names[k])
         if available_replacements >= teacher_cfg.N:
             replace_person_names[k] = replace_person_names[k][:teacher_cfg.N]
         else:
             print(f"Warning: {k} has only {available_replacements} replacements (requested N={teacher_cfg.N})")
-        # 确保至少有一些替换
-        assert len(replace_person_names[k]) > 0, f"No replacements available for {k}"
     # load replace book names
     with open('data/replace_book_names.json', 'r') as f:
         replace_book_names = json.load(f)
@@ -508,16 +474,14 @@ def main(cfg):
         for i in v:
             assert len(k.split()) == len(i.split())
 
-    # 检查模型路径：优先使用本地下载的模型
     actual_model_path = cfg.model_path
     if not os.path.exists(cfg.model_path):
-        # 如果配置的路径不存在，检查本地资源目录
         local_model_path = os.path.join(HF_LOCAL_DIR, cfg.model_path.replace("/", "_"))
         if os.path.exists(local_model_path):
             actual_model_path = local_model_path
-            print(f"使用本地模型: {local_model_path}")
+            print(f"Using local model: {local_model_path}")
         else:
-            print(f"将从 HuggingFace Hub 加载模型: {cfg.model_path}")
+            print(f"Loading model from HuggingFace Hub: {cfg.model_path}")
     
     # Load model; avoid passing unsupported arguments like `use_flash_attention_2`
     # which some architectures (e.g., MistralForCausalLM) do not accept.
@@ -540,10 +504,10 @@ def main(cfg):
             title = question_to_title[data_item['question']]
             result_key = data_item['question']
         else:
-            if data_item['title'] in processed:
+            title = data_item['title'].strip() if isinstance(data_item['title'], str) else data_item['title']
+            if title in processed:
                 continue
             document = data_item['wikipage']
-            title = data_item['title']
             processed.add(title)
             result_key = title
         
@@ -559,6 +523,11 @@ def main(cfg):
         print(f"Title: {title}")
         print(f"Person names: {target_ents}")
         print(f"Book names: {book_ents}")
+        
+        if title not in replace_person_names:
+            print(f"Warning: Skipping {title}, no replacement mapping")
+            continue
+            
         target_ent_positions = copy.deepcopy(target_ent_positions + work_of_art_ent_positions)
         target_ent_positions = sorted(target_ent_positions, key=lambda x: x['position'])
             
@@ -632,12 +601,12 @@ def main(cfg):
             probs_blv = torch.nn.functional.softmax(logits, dim=-1)
             for i, adjust_set in enumerate(adjust_list):
                 teacher_dist[adjust_set[0][1]] = {'probs': probs_blv[i].cpu().numpy(), 'num_added_tokens': num_added_tokens[i], 'replace_ids': intervened_inputs['input_ids'][i].tolist()}
-            # 使用实际的替换数量（可能与teacher_cfg.N不同）
             actual_n = len(replace_persons)
             assert len(teacher_dist) == actual_n
             
             # get training indices and probabilities
-            original_ids = tokenizer(content, add_special_tokens=True)['input_ids']
+            MAX_LENGTH = 512
+            original_ids = tokenizer(content, add_special_tokens=True, max_length=MAX_LENGTH, truncation=True)['input_ids']
             # find named entity indices
             target_text_starts = get_target_ent_text_indices(tokenizer, original_ids, target_ent_mention_texts)
             target_ent_mention_spans = get_ent_indices(target_ents, original_ids, tokenizer)
@@ -685,7 +654,7 @@ def main(cfg):
                     anchor_positions = sorted(list(set(anchor_positions)))
                     for anchor_first_ind in anchor_positions:
                         if anchor_first_ind - 1 in ori_match_ids:
-                            # do not reduce probability for 1st appearance
+                            # do not move probability for 1st appearance
                             if tofu and all([aem[0] >= anchor_first_ind for aem in target_ent_mention_spans]):
                                 continue
                             modify_index = ori_match_ids.index(anchor_first_ind - 1)
@@ -696,11 +665,9 @@ def main(cfg):
             # get the intersection of matched_original_ids_index
             reduced_original_ids_index = reduce(np.intersect1d, [v['matched_original_ids_index'] for v in tmp_dict.values()])
             if len(reduced_original_ids_index) == 0:
-                # 不让整个程序退出，只跳过当前 content
                 print(f"Error in processing {title}: empty reduced_original_ids_index, skip this content chunk.")
                 continue
             reduced_original_ids = np.array(original_ids)[reduced_original_ids_index]
-            # 使用实际的替换数量
             actual_n = len(replace_persons)
             assert len(tmp_dict) == actual_n
             for k, v in tmp_dict.items():
@@ -791,7 +758,6 @@ def main(cfg):
             else:
                 print(f"\nOriginal input: {tokenizer.decode(original_ids, skip_special_tokens=True)}\n")
                 print(f"\nMatched original input: {tokenizer.decode([original_ids[i] for i in reduced_original_ids_index], skip_special_tokens=True)}\n")
-                # weighted_avg_probs 是 numpy 数组，这里用 numpy 的 argmax 即可
                 predicted = np.argmax(weighted_avg_probs, axis=-1)
                 print(f"\nPredicted: {tokenizer.decode(predicted.tolist(), skip_special_tokens=True)}\n")
         
@@ -802,6 +768,7 @@ def main(cfg):
 
 
 def get_target_name_teacher(content, adjust_list, model, tokenizer, N, target_forget_name, replace_anchor_person=True):
+    """Build teacher distribution for a specific target entity name."""
     original_ids = tokenizer(content, add_special_tokens=True)['input_ids']
     target_forget_name_word = target_forget_name.split()
     target_name_num_word = len(target_forget_name_word)
@@ -906,7 +873,6 @@ def get_target_name_teacher(content, adjust_list, model, tokenizer, N, target_fo
     # get the intersection of matched_original_ids_index
     reduced_original_ids_index = reduce(np.intersect1d, [v['matched_original_ids_index'] for v in tmp_dict.values()])
     if len(reduced_original_ids_index) == 0:
-        # 如果这里没有交集，说明这个 target 名字没法稳定对齐，返回空结果而不是直接退出程序
         print(f"Error in processing {content} in get_target_name_teacher; skip this target.")
         vocab_size = outs.logits.shape[-1]
         return np.array([], dtype=int), np.zeros((0, vocab_size), dtype=float), np.array([], dtype=int)

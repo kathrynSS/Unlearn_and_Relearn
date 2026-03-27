@@ -1,0 +1,43 @@
+A student is answering a programming question.
+
+Question: {question}
+
+Options:
+{options_text}
+
+Student's Answer: {model_answer}
+Student's Explanation: {model_explanation}
+
+Correct Answer: {correct_answer}
+
+IMPORTANT: Evaluate BOTH the answer choice AND the reasoning:
+
+Step 1: Check if Student's Answer ({model_answer}) matches Correct Answer ({correct_answer})
+Step 2: Check if Student's Explanation demonstrates correct understanding of WHY that answer is right
+
+The student is FULLY CORRECT only if BOTH conditions are met:
+- Answer letter matches the correct answer
+- Explanation shows correct reasoning (doesn't need to be perfect, but must show understanding of the key concept)
+
+If FULLY CORRECT (letter + reasoning both right):
+- Praise briefly (1 sentence)
+- Set is_correct = true
+
+If answer letter is CORRECT but explanation is WRONG or shows misunderstanding:
+- Point out the issue in their reasoning (1 sentence)
+- Explain the correct reasoning concisely (1 sentence)
+- Set is_correct = false (because understanding is incomplete)
+
+If answer letter is WRONG:
+- State why their choice is wrong (1 sentence)
+- Explain why the correct answer is right (1 sentence, focus on ONE key point)
+- Set is_correct = false
+
+CRITICAL: Keep ALL explanations SHORT (1-2 sentences total). Be direct and clear, not verbose.
+
+Respond in JSON format:
+{{
+    "is_correct": true or false,
+    "feedback": "Brief conversational feedback (1 sentence)",
+    "explanation": "If incorrect: concise teaching point (1-2 sentences). If correct: brief praise."
+}}

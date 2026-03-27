@@ -1,0 +1,21 @@
+A student has attempted this question multiple times but still hasn't gotten the correct answer.
+
+Question: {question}
+
+Options:
+{options_text}
+
+Correct Answer: {correct_answer}
+
+Student's Attempts:
+{attempts_text}
+
+Please provide a CONCISE teaching explanation (2-3 sentences maximum):
+
+1. Identify the key misconception based on their attempts
+2. Explain why {correct_answer} is correct (focus on ONE main reason)
+3. If needed, briefly contrast with their wrong answer
+
+IMPORTANT: Keep it SHORT and CLEAR. Focus on ONE key insight, not multiple points.
+
+Write your explanation as if you're speaking directly to the student in a conversational, supportive tone.

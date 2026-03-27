@@ -1,0 +1,20 @@
+Question: {question}
+
+Options:
+{options_text}
+
+Answer format (MANDATORY):
+<letter>. <explanation>
+
+You MUST provide both the letter AND explanation in ONE line.
+
+Good example:
+B. Named groups return a dict mapping group names to captured strings.
+
+Bad examples (NEVER do this):
+B.
+B
+Just B
+
+Do not repeat the question or options.
+Answer:

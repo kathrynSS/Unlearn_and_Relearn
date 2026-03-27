@@ -1,0 +1,7 @@
+[INST] Please answer the following Python programming multiple-choice question.
+
+Question: {question}
+
+Options:
+{options_text}
+[/INST]

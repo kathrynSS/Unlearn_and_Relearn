@@ -16,23 +16,16 @@ from transformers.integrations.deepspeed import deepspeed_init, deepspeed_load_c
 
 
 class LossLoggingCallback(TrainerCallback):
-    """
-    将 HuggingFace Trainer 在训练过程中的日志（loss、epoch、step 等）
-    追加写入到一个 txt 文件，方便你事后画曲线或排查训练异常。
-
-    默认写到 args.output_dir/training_log.txt。
-    """
+    """Callback that logs training metrics (loss, epoch, step) to a text file."""
 
     def __init__(self, log_filename: str = "training_log.txt"):
         self.log_filename = log_filename
 
     def on_log(self, args, state, control, logs=None, **kwargs):
-        # Trainer 每次到 logging_steps 会调用一次 on_log
         if logs is None:
             return control
 
         log_path = Path(args.output_dir) / self.log_filename
-        # 在同一个文件中按行追加 JSON，便于后续用任何脚本解析
         payload = {
             "global_step": int(state.global_step),
             "epoch": float(state.epoch) if state.epoch is not None else None,
@@ -46,22 +39,20 @@ class LossLoggingCallback(TrainerCallback):
 
 
 class CustomTrainer(Trainer):
+    """Trainer with custom loss computation and prediction step for different data formats."""
+
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         input_ids, labels, attention_mask = inputs
-        # forward pass
         outputs = model(input_ids,labels=labels, attention_mask=attention_mask)
-        # logits = outputs.get("logits")
         loss = outputs.loss
         return (loss, outputs) if return_outputs else loss
     
     def prediction_step(self, model, inputs, prediction_loss_only: bool, ignore_keys=None, **kwargs):
-        # 处理不同数据格式：intervention 等使用 (forget_inputs, retain_inputs) 格式
         if self.loss_type in ["intervention", "prompt_distill", "whp", "di"]:
             forget_inputs, retain_inputs = inputs
             input_ids, attention_mask, target_probs, indices = forget_inputs
             with torch.no_grad():
                 outputs = model(input_ids, attention_mask=attention_mask)
-                # 计算 KL loss 作为 eval_loss
                 logits = torch.gather(outputs.logits, 1, indices.unsqueeze(-1).expand(-1, -1, outputs.logits.shape[-1]))
                 probs = F.log_softmax(logits, dim=-1)
                 loss = F.kl_div(probs, target_probs, reduction='none', log_target=False)
@@ -70,7 +61,6 @@ class CustomTrainer(Trainer):
                 loss = loss.mean()
             return (loss, None, None)
         else:
-            # grad_diff, npo, KL 等格式: (forget_inputs, retain_inputs)
             forget_inputs, retain_inputs = inputs
             input_ids, labels, attention_mask = forget_inputs
             with torch.no_grad():
@@ -82,6 +72,8 @@ class CustomTrainer(Trainer):
 
 
 class CustomTrainerForgetting(Trainer):
+    """Trainer for machine unlearning with support for grad_diff, npo, intervention, and distillation losses."""
+
     def __init__(self, *args, **kwargs):
         self.loss_type = kwargs.pop('forget_loss')
         self.oracle_model = kwargs.pop('oracle_model')
@@ -95,6 +87,7 @@ class CustomTrainerForgetting(Trainer):
             self.oracle_model = self.e_prepare_deepspeed(self.oracle_model)
 
     def e_prepare_deepspeed(self, model):
+        """Prepare a frozen reference model for DeepSpeed inference."""
         # Adapted from accelerate: https://github.com/huggingface/accelerate/blob/739b135f8367becb67ffaada12fe76e3aa60fefd/src/accelerate/accelerator.py#L1473
         deepspeed_plugin = self.accelerator.state.deepspeed_plugin
         config_kwargs = copy.deepcopy(deepspeed_plugin.deepspeed_config)
@@ -107,8 +100,6 @@ class CustomTrainerForgetting(Trainer):
                     else getattr(model.config, "hidden_size", None)
                 )
                 if hidden_size is not None and config_kwargs["zero_optimization"]["stage"] == 3:
-                    # Note that `stage3_prefetch_bucket_size` can produce DeepSpeed messages like: `Invalidate trace cache @ step 0: expected module 1, but got module 0`
-                    # This is expected and is not an error, see: https://github.com/microsoft/DeepSpeed/discussions/4081
                     config_kwargs.update(
                         {
                             "zero_optimization.reduce_bucket_size": hidden_size * hidden_size,
@@ -117,21 +108,17 @@ class CustomTrainerForgetting(Trainer):
                         }
                     )
 
-        # If ZeRO-3 is used, we shard both the active and reference model.
-        # Otherwise, we assume the reference model fits in memory and is initialized on each device with ZeRO disabled (stage 0)
         if config_kwargs["zero_optimization"]["stage"] != 3:
             config_kwargs["zero_optimization"]["stage"] = 0
         config_kwargs["optimizer"] = {"type": None}
         model, *_ = deepspeed.initialize(model=model, config=config_kwargs)
         model.eval()
-        #set the gradients to false for every parameter
         for param in model.parameters():
             param.requires_grad = False
         
         return model
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-
         if self.loss_type == "grad_diff":
             forget_inputs, retain_inputs = inputs
             input_ids, labels, attention_mask = forget_inputs
@@ -152,7 +139,7 @@ class CustomTrainerForgetting(Trainer):
             forget_inputs, retain_inputs = inputs
             input_ids, labels, attention_mask = forget_inputs
             outputs = model(input_ids, labels=labels, attention_mask=attention_mask)
-            forget_loss_current = get_batch_loss(outputs.logits, labels) # B, L
+            forget_loss_current = get_batch_loss(outputs.logits, labels)
 
             with torch.no_grad():
                 forget_outputs_oracle = self.oracle_model(input_ids, labels=labels, attention_mask=attention_mask)
@@ -171,17 +158,15 @@ class CustomTrainerForgetting(Trainer):
         
         elif self.loss_type in ["intervention", 'prompt_distill', 'whp', 'di']:
             forget_inputs, retain_inputs = inputs
-            # forget loss
             input_ids, attention_mask, target_probs, indices = forget_inputs
             outputs = model(input_ids, attention_mask=attention_mask)
-            logits = torch.gather(outputs.logits, 1, indices.unsqueeze(-1).expand(-1, -1, outputs.logits.shape[-1])) # B, L, V
-            probs = F.log_softmax(logits, dim=-1) # B, L, V
-            forget_loss = F.kl_div(probs, target_probs, reduction='none', log_target=False) # B, L, V
-            forget_loss = forget_loss * (indices.unsqueeze(-1) != 0).float() # B, L, V
-            forget_loss = forget_loss.sum(dim=[1, 2]) / (indices != 0).sum(dim=1) # B
+            logits = torch.gather(outputs.logits, 1, indices.unsqueeze(-1).expand(-1, -1, outputs.logits.shape[-1]))
+            probs = F.log_softmax(logits, dim=-1)
+            forget_loss = F.kl_div(probs, target_probs, reduction='none', log_target=False)
+            forget_loss = forget_loss * (indices.unsqueeze(-1) != 0).float()
+            forget_loss = forget_loss.sum(dim=[1, 2]) / (indices != 0).sum(dim=1)
             forget_loss = forget_loss.mean()
             
-            # retain loss
             if self.retain_strength > 0:
                 retain_input_ids, retain_labels, retain_attention_mask = retain_inputs
                 retain_outputs = model(retain_input_ids, labels=retain_labels, attention_mask=retain_attention_mask)
@@ -195,19 +180,13 @@ class CustomTrainerForgetting(Trainer):
     
     
     def prediction_step(self, model, inputs, prediction_loss_only: bool, ignore_keys=None, **kwargs):
-        """
-        支持多种数据格式的评估步骤，只返回 loss，不返回 logits 以节省显存。
-        """
+        """Evaluation step supporting multiple data formats, returns loss only to save memory."""
         with torch.no_grad():
-            # 检测数据格式
             if isinstance(inputs, (list, tuple)) and len(inputs) == 2 and isinstance(inputs[0], (list, tuple)):
-                # intervention/distill 格式: ((forget_inputs), (retain_inputs))
                 forget_inputs, retain_inputs = inputs
                 if len(forget_inputs) == 4:
-                    # intervention 格式: (input_ids, attention_mask, target_probs, indices)
                     input_ids, attention_mask, target_probs, indices = forget_inputs
                     outputs = model(input_ids, attention_mask=attention_mask)
-                    # 计算与 compute_loss 一致的 KL loss
                     logits = torch.gather(outputs.logits, 1, indices.unsqueeze(-1).expand(-1, -1, outputs.logits.shape[-1]))
                     probs = F.log_softmax(logits, dim=-1)
                     loss = F.kl_div(probs, target_probs, reduction='none', log_target=False)
@@ -215,16 +194,13 @@ class CustomTrainerForgetting(Trainer):
                     loss = loss.sum(dim=[1, 2]) / (indices != 0).sum(dim=1)
                     loss = loss.mean()
                 else:
-                    # 其他 distill 格式: (input_ids, labels, attention_mask)
                     input_ids, labels, attention_mask = forget_inputs
                     outputs = model(input_ids, labels=labels, attention_mask=attention_mask)
                     loss = outputs.loss
             else:
-                # 标准格式: (input_ids, labels, attention_mask)
                 input_ids, labels, attention_mask = inputs
                 outputs = model(input_ids, labels=labels, attention_mask=attention_mask)
                 loss = outputs.loss
-        # 只返回 loss，不返回 logits/labels，避免显存累积导致 OOM
         return (loss, None, None)
 
     def evaluate(
@@ -233,13 +209,7 @@ class CustomTrainerForgetting(Trainer):
         ignore_keys = None,
         metric_key_prefix = "eval",
     ):
-        """
-        轻量级评估：只使用 HuggingFace Trainer 自带的 evaluate 逻辑，
-        计算并记录 eval_loss，方便在训练过程中和训练 loss 一起写入日志。
-
-        原来用于生成各种 eval_log_*.json 的复杂评估流程已经移到
-        `evaluate_external` 中，如需使用可以手动调用。
-        """
+        """Lightweight evaluation using built-in Trainer logic, computing eval_loss only."""
         return super().evaluate(
             eval_dataset=eval_dataset,
             ignore_keys=ignore_keys,
@@ -252,7 +222,7 @@ class CustomTrainerForgetting(Trainer):
         ignore_keys = None,
         metric_key_prefix = "eval",
     ):
-        # if eval is called w/o train, handle model prep here
+        """Run full evaluation pipeline: per-task eval, aggregation, and model utility/forget quality stats."""
         if self.is_deepspeed_enabled and self.deepspeed is None:
             _, _ = deepspeed_init(self, num_training_steps=0, inference=True)
         args = self.args
@@ -268,16 +238,12 @@ class CustomTrainerForgetting(Trainer):
             if self.is_fsdp_enabled:
                 self.model = model
 
-            # for the rest of this function `model` is the outside model, whether it was wrapped or not
             if model is not self.model:
                 self.model_wrapped = model
 
-            # backward compatibility
             if self.is_deepspeed_enabled:
                 self.deepspeed = self.model_wrapped
 
-        # if full fp16 or bf16 eval is wanted and this ``evaluation`` or ``predict`` isn't called
-        # while ``train`` is running, cast it to the right dtype first and then put on device
         if not self.is_in_train:
             if args.fp16_full_eval:
                 model = model.to(dtype=torch.float16, device=args.device)
@@ -293,7 +259,6 @@ class CustomTrainerForgetting(Trainer):
             for i, (folder, split, question_key, answer_key, eval_task, base_answer_key, perturbed_answer_key) in enumerate(zip(eval_cfg.data_path, eval_cfg.split_list, eval_cfg.question_key, eval_cfg.answer_key, eval_cfg.eval_task, eval_cfg.base_answer_key, eval_cfg.perturbed_answer_key)):
                 world_size = self.accelerator.num_processes
 
-                # For some reason, Hydra is not interprating the split correctly
                 if eval_task == 'eval_log_forget':
                     split = eval_cfg.split
                 print(f'Working on eval task {eval_task} with split {split}')
@@ -314,11 +279,9 @@ class CustomTrainerForgetting(Trainer):
                 with open(save_filename, "w") as f:
                     json.dump(eval_logs, f, indent=4)
             
-            # wait for all process to finish
             self.accelerator.wait_for_everyone()
             aggregated_eval_logs = {}
             for eval_task in eval_cfg.eval_task:
-                #read the saved file as json and merge them using merge_dicts
                 if world_size > 1:
                     if self.accelerator.is_local_main_process:
                         eval_logs = json.load(open(os.path.join(curr_save_dir, f"{eval_task}_0.json")))
@@ -330,10 +293,7 @@ class CustomTrainerForgetting(Trainer):
 
                         new_save_filename = os.path.join(curr_save_dir, f"{eval_task}.json")
                         with open(new_save_filename, "w") as f:
-                            # pretty write json to f
                             json.dump(eval_logs, f, indent=4)
-
-                            #delete old files use shutil
 
                             for i in range(world_size):
                                 filename = os.path.join(curr_save_dir, f"{eval_task}_{i}.json")
@@ -354,7 +314,6 @@ class CustomTrainerForgetting(Trainer):
                     forget_quality = {}
                 aaggregate_stat = {**model_utility, **forget_quality}
 
-                # save aaggregate_stat as csv
                 with open(os.path.join(curr_save_dir, "aggregate_stat.csv"), 'w') as csvfile:
                     field_names = list(aaggregate_stat.keys())
                     writer = csv.DictWriter(csvfile, fieldnames=field_names)
@@ -366,6 +325,7 @@ class CustomTrainerForgetting(Trainer):
 
 
 def custom_data_collator_forget(samples):
+    """Collate forget and retain samples into stacked tensor tuples."""
     forget_samples, retain_samples = [sample[0] for sample in samples], [sample[1] for sample in samples]
     rets = []
     for data_type in ["forget", "retain"]:
@@ -378,10 +338,10 @@ def custom_data_collator_forget(samples):
 
 
 def custom_data_collator_distill(samples):
+    """Collate distillation samples with variable-length padding for forget data and stacking for retain data."""
     forget_samples, retain_samples = [sample[0] for sample in samples], [sample[1] for sample in samples]
     
     input_ids = [i for s in forget_samples for i in s[0]]
-    # FIXME: hardcode padding value for Llama2
     input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=2)
     attention_mask = [i for s in forget_samples for i in s[1]]
     attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask, batch_first=True, padding_value=0)
@@ -391,7 +351,6 @@ def custom_data_collator_distill(samples):
     indices = torch.nn.utils.rnn.pad_sequence(indices, batch_first=True, padding_value=0)
     indices[indices >= input_ids.shape[1]] = 0
     
-    # retain data
     retain_input_ids = [s[0] for s in retain_samples]
     retain_labels = [s[1] for s in retain_samples]
     retain_attention_mask = [s[2] for s in retain_samples]
@@ -400,6 +359,7 @@ def custom_data_collator_distill(samples):
 
 
 def compute_metrics(pred):
+    """Compute accuracy and cross-entropy loss from model predictions."""
     logits, labels = torch.from_numpy(pred.predictions), torch.from_numpy(pred.label_ids)
     preds = torch.from_numpy(pred.predictions.argmax(-1))
     shifted_labels = labels[..., 1:].contiguous()
@@ -409,6 +369,7 @@ def compute_metrics(pred):
 
 
 def get_loss(output, labels):
+    """Compute cross-entropy loss with shifted labels."""
     shifted_labels = labels[..., 1:].contiguous()
     output = output[..., :-1, :].contiguous()
 

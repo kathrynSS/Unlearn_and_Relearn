@@ -1,3 +1,38 @@
+import os
+import sys
+
+# ============= Local resource path configuration (must be set before importing other libraries) =============
+LOCAL_RESOURCES_DIR = "/root/autodl-tmp/local_resources"
+os.makedirs(LOCAL_RESOURCES_DIR, exist_ok=True)
+
+HF_LOCAL_DIR = os.path.join(LOCAL_RESOURCES_DIR, "huggingface_models")
+os.makedirs(HF_LOCAL_DIR, exist_ok=True)
+os.environ["HF_HOME"] = HF_LOCAL_DIR
+os.environ["TRANSFORMERS_CACHE"] = HF_LOCAL_DIR
+os.environ["HUGGINGFACE_HUB_CACHE"] = HF_LOCAL_DIR
+os.environ["HF_DATASETS_CACHE"] = os.path.join(HF_LOCAL_DIR, "datasets")
+
+TORCH_HUB_DIR = os.path.join(LOCAL_RESOURCES_DIR, "torch_hub")
+os.makedirs(TORCH_HUB_DIR, exist_ok=True)
+os.environ["TORCH_HOME"] = TORCH_HUB_DIR
+
+XDG_CACHE_DIR = os.path.join(LOCAL_RESOURCES_DIR, "cache")
+os.makedirs(XDG_CACHE_DIR, exist_ok=True)
+os.environ["XDG_CACHE_HOME"] = XDG_CACHE_DIR
+
+WANDB_DIR = os.path.join(LOCAL_RESOURCES_DIR, "wandb_logs")
+os.makedirs(WANDB_DIR, exist_ok=True)
+os.environ["WANDB_DIR"] = WANDB_DIR
+os.environ["WANDB_CACHE_DIR"] = os.path.join(LOCAL_RESOURCES_DIR, "wandb_cache")
+
+print(f"========== Resource directory config (forget.py) ==========")
+print(f"Local resources: {LOCAL_RESOURCES_DIR}")
+print(f"HuggingFace models: {HF_LOCAL_DIR}")
+print(f"Torch Hub: {TORCH_HUB_DIR}")
+print(f"XDG cache: {XDG_CACHE_DIR}")
+print(f"Wandb logs: {WANDB_DIR}")
+print(f"==============================================")
+
 from data_module import TextForgetDatasetQA, TextForgetDatasetQADistill
 from dataloader import CustomTrainerForgetting, custom_data_collator_forget, custom_data_collator_distill, LossLoggingCallback
 import torch
@@ -5,7 +40,6 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, set_se
 
 import hydra
 import transformers
-import os
 import shutil
 from peft import LoraConfig, get_peft_model, PeftModel
 from pathlib import Path
@@ -15,13 +49,14 @@ import inspect
 
 
 def find_all_linear_names(model):
+    """Find all linear layer names in the model for LoRA targeting."""
     cls = torch.nn.Linear
     lora_module_names = set()
     for name, module in model.named_modules():
         if isinstance(module, cls):
             names = name.split('.')
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
-    if 'lm_head' in lora_module_names: # needed for 16-bit
+    if 'lm_head' in lora_module_names:
         lora_module_names.remove('lm_head')
     return list(lora_module_names)
 
@@ -41,18 +76,16 @@ def print_trainable_parameters(model):
     )
 
 
-@hydra.main(version_base=None, config_path="config", config_name="forget_wpu")
+@hydra.main(version_base=None, config_path="config", config_name="forget_ai")
 def main(cfg):
     num_devices = int(os.environ.get('WORLD_SIZE', 1))
     print(f"num_devices: {num_devices}")
 
-    # Always define local_rank (default to 0 for single-process runs)
     local_rank = int(os.environ.get('LOCAL_RANK', '0'))
 
     set_seed(cfg.seed)
     print(f"seed: {cfg.seed}")
 
-    # Enable Weights & Biases logging (ensure WANDB is not disabled) and disable DeepSpeed MPI discovery (no mpi4py required)
     os.environ.pop("WANDB_DISABLED", None)
     os.environ["DEEPSPEED_DISABLE_MPI"] = "1"
     model_cfg = get_model_identifiers_from_yaml(cfg.model_family)
@@ -60,10 +93,6 @@ def main(cfg):
     if cfg.model_path is None:
         cfg.model_path = model_cfg["ft_model_path"]
 
-    # 处理保存目录：
-    # - 如果目录已存在且非空：
-    #   - 且 overwrite_dir=False，则直接退出，避免覆盖已有结果
-    #   - 且 overwrite_dir=True，则先完整删除该目录，再重新创建一个干净的目录
     save_dir_path = Path(cfg.save_dir)
     if save_dir_path.exists() and any(save_dir_path.iterdir()):
         print(f"Save dir already exists: {save_dir_path}")
@@ -76,7 +105,6 @@ def main(cfg):
 
     save_dir_path.mkdir(parents=True, exist_ok=True)
 
-    # save cfg in cfg.save_dir
     if local_rank == 0:
         with open(f"{cfg.save_dir}/config.yaml", "w") as file:
             OmegaConf.save(cfg, file)
@@ -105,7 +133,7 @@ def main(cfg):
     if 'TOFU' in cfg.data_path:
         save_strategy = 'steps'
         save_steps = steps_per_epoch
-        eval_steps = max_steps + 1 # separate evaluation
+        eval_steps = max_steps + 1
     else:
         save_strategy = 'no'
         save_steps = max_steps + 1
@@ -130,9 +158,6 @@ def main(cfg):
             else:
                 print('='*20 + f"Decoded example {tokenizer.decode(each[0])}" + '='*20)
 
-    # 一些环境中的 transformers 版本可能不支持所有 TrainingArguments 参数
-    # 这里根据当前版本的 __init__ 签名过滤掉不被支持的参数，避免
-    # “unexpected keyword argument 'evaluation_strategy'” 之类的错误。
     training_kwargs = dict(
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
@@ -153,10 +178,8 @@ def main(cfg):
         save_steps=save_steps,
         ddp_find_unused_parameters=False,
         weight_decay=cfg.weight_decay,
-        # 在训练过程中按 epoch 做一次轻量级评估（只算 eval_loss 并写入日志）
-        # 同时添加新旧两种参数名，过滤器会自动选择当前版本支持的
-        evaluation_strategy="epoch",  # transformers < 4.36
-        eval_strategy="epoch",        # transformers >= 4.36
+        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         seed=cfg.seed,
     )
 
@@ -174,7 +197,6 @@ def main(cfg):
     if cfg.forget_loss in ["KL", 'npo']:
         oracle_model = AutoModelForCausalLM.from_pretrained(cfg.model_path, config=config,  torch_dtype=torch.bfloat16, trust_remote_code = True)
     
-    #now we have a HuggingFace model 
     if model_cfg["gradient_checkpointing"] == "true":
         model.gradient_checkpointing_enable()
     trainable_modules = find_all_linear_names(model)
@@ -197,8 +219,8 @@ def main(cfg):
         tokenizer=tokenizer,
         train_dataset=torch_format_dataset,
         eval_dataset = torch_format_dataset,
-        compute_metrics=None,                # 评估指标在外部脚本中做，这里只关心训练 loss
-        callbacks=[LossLoggingCallback()],   # 将每次 logging 的 loss / epoch 写入 txt
+        compute_metrics=None,
+        callbacks=[LossLoggingCallback()],
         args=training_args,
         data_collator=data_collator,
         oracle_model = oracle_model,
@@ -207,24 +229,15 @@ def main(cfg):
         retain_strength = cfg.retain_strength,
         beta = cfg.beta,
     )
-    model.config.use_cache = False  # silence the warnings. Please re-enable for inference!
+    model.config.use_cache = False
     trainer.train()
     
-    # 保存模型
-    # 说明：
-    # - 当前我们主要使用 LoRA 方式微调，大部分情况下只需要保存适配器权重即可；
-    # - 之前这里先调用了 `model.merge_and_unload()`，再让 Trainer 保存模型，
-    #   会导致 PEFT 认为「已经没有可保存的 LoRA 参数」，从而写出一个几乎空的
-    #   `adapter_model.safetensors`（只有几十字节），这就是你看到 40B 文件的原因。
-    # - 因此这里去掉 merge_and_unload，直接用 Trainer 来保存 LoRA 适配器。
     if 'TOFU' not in cfg.data_path:
         trainer.save_model(cfg.save_dir)
 
-    # delete all "global_step*" files in the save_dir/checkpoint-*/ directories
     if local_rank == 0:
         for file in Path(cfg.save_dir).glob("checkpoint-*"):
             for global_step_dir in file.glob("global_step*"):
-                # delete the directory
                 shutil.rmtree(global_step_dir)
 
 

@@ -1,0 +1,14 @@
+Question: {question}
+
+Options:
+{options_text}
+
+Instructions:
+1. Choose the correct answer (A, B, C, or D)
+2. Explain WHY in one sentence
+3. Format: <letter>. <your explanation>
+
+Example:
+B. Named groups allow you to access captured text by name instead of index.
+
+Your answer:

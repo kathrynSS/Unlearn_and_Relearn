@@ -1,0 +1,23 @@
+Question: {question}
+
+Options:
+{options_text}
+
+Previous conversation:
+{history_text}
+
+Based on the teacher's feedback, reconsider and answer again.
+
+Answer format (MANDATORY):
+<letter>. <explanation based on what you learned>
+
+Good example:
+C. The teacher clarified that the definition only matches option C.
+
+Bad examples (NEVER do this):
+C.
+C
+Just C
+
+Show you understood the feedback. Do not repeat the question.
+Answer:

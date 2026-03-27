@@ -1,0 +1,33 @@
+# 反学习配置文件
+# 用于在遗忘后的模型上重新学习被遗忘的数据
+
+model_family: mistral-7b
+model_path: null  # 遗忘后的模型路径，需要在命令行指定
+from_hf_hub: false
+
+# 训练模式选择
+# full_finetune: true 表示全量微调（所有参数可训练）
+# full_finetune: false 且 LoRA.r > 0 表示使用 LoRA
+# full_finetune: false 且 LoRA.r = 0 也会触发全量微调
+full_finetune: false
+
+LoRA:
+  r: 8
+  alpha: 32
+  dropout: 0.05
+
+# 学习率建议：
+# - 全量微调: 2e-5 ~ 5e-5 (较小，避免灾难性遗忘)
+# - LoRA: 1e-4 ~ 5e-4 (可以更大)
+lr: 1e-5
+split: forget_10  # 要重新学习的数据 split
+data_path: data_construct/data/data_ai_progressive  # 数据路径
+batch_size: 16
+gradient_accumulation_steps: 1
+num_epochs: 10  # 反学习的 epoch 数
+overwrite_dir: false
+seed: 42
+weight_decay: 0.01
+save_dir_root: results
+save_dir: ${save_dir_root}/relearn/${model_path}/${split}_${num_epochs}epochs
+

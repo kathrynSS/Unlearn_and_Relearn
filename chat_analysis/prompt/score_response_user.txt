@@ -1,0 +1,16 @@
+Question: {question}
+
+Options:
+{options_text}
+
+Correct Answer: {correct_answer}
+
+Student's Response:
+- Selected Answer: {student_answer}
+- Explanation: {student_explanation}
+
+Please evaluate this response on two dimensions:
+1. Answer correctness (1 if the selected answer matches the correct answer, 0 otherwise)
+2. Explanation quality (1 if the explanation is accurate and demonstrates understanding, 0 if missing or incorrect)
+
+Return your evaluation as a JSON object.

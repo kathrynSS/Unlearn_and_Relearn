@@ -1,8 +1,26 @@
+import os
+
+# ============= Local resource path config (must be set before importing other libraries) =============
+LOCAL_RESOURCES_DIR = "/root/autodl-tmp/local_resources"
+os.makedirs(LOCAL_RESOURCES_DIR, exist_ok=True)
+
+HF_LOCAL_DIR = os.path.join(LOCAL_RESOURCES_DIR, "huggingface_models")
+os.makedirs(HF_LOCAL_DIR, exist_ok=True)
+os.environ.setdefault("HF_HOME", HF_LOCAL_DIR)
+os.environ.setdefault("TRANSFORMERS_CACHE", HF_LOCAL_DIR)
+os.environ.setdefault("HUGGINGFACE_HUB_CACHE", HF_LOCAL_DIR)
+os.environ.setdefault("HF_DATASETS_CACHE", os.path.join(HF_LOCAL_DIR, "datasets"))
+
+XDG_CACHE_DIR = os.path.join(LOCAL_RESOURCES_DIR, "cache")
+os.makedirs(XDG_CACHE_DIR, exist_ok=True)
+os.environ.setdefault("XDG_CACHE_HOME", XDG_CACHE_DIR)
+# =============================================================================
+
 from tqdm import tqdm
 from data_module import TextDatasetQA, custom_data_collator, get_batch_loss, custom_data_collator_with_indices
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
-import os, hydra
+import hydra
 import evaluate
 import json
 from pathlib import Path
@@ -203,7 +221,7 @@ def get_all_evals(cfg, model, tokenizer, eval_task, eval_dataloader, base_eval_d
     return eval_logs
 
 
-@hydra.main(version_base=None, config_path="config", config_name="eval_everything")
+@hydra.main(version_base=None, config_path="config", config_name="forget_ai")
 def main(cfg):
     assert len(cfg.data_path)==len(cfg.split_list)==len(cfg.eval_task)==len(cfg.question_key)==len(cfg.answer_key)==len(cfg.base_answer_key)==len(cfg.perturbed_answer_key), "data_path, split, eval_task, question_key, and answer_key must be the same length"
     Path(cfg.save_dir).mkdir(parents=True, exist_ok=True)
@@ -312,12 +330,9 @@ def run_generation(cfg, batch, model, tokenizer):
     for s in input_strings:
         parts = s.split(split_symbol)
         if len(parts) > 1:
-            # 正常情况：前半部分是 prompt，后半部分是答案
             new_input_strings.append(parts[0])
             ground_truth.append(parts[1])
         else:
-            # 没有分隔符时，不要丢掉样本：
-            # 把整句当成 prompt，gt 置空字符串，避免后面空列表报错
             new_input_strings.append(s)
             ground_truth.append("")
     input_strings = new_input_strings

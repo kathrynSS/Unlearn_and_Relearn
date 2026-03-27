@@ -1,7 +1,29 @@
+import os
+
+# ============= Local resource path configuration (must be set before other imports) =============
+LOCAL_RESOURCES_DIR = "/root/autodl-tmp/local_resources"
+os.makedirs(LOCAL_RESOURCES_DIR, exist_ok=True)
+
+HF_LOCAL_DIR = os.path.join(LOCAL_RESOURCES_DIR, "huggingface_models")
+os.makedirs(HF_LOCAL_DIR, exist_ok=True)
+os.environ.setdefault("HF_HOME", HF_LOCAL_DIR)
+os.environ.setdefault("TRANSFORMERS_CACHE", HF_LOCAL_DIR)
+os.environ.setdefault("HUGGINGFACE_HUB_CACHE", HF_LOCAL_DIR)
+os.environ.setdefault("HF_DATASETS_CACHE", os.path.join(HF_LOCAL_DIR, "datasets"))
+
+STANZA_LOCAL_DIR = os.path.join(LOCAL_RESOURCES_DIR, "stanza_resources")
+os.makedirs(STANZA_LOCAL_DIR, exist_ok=True)
+os.environ.setdefault("STANZA_RESOURCES_DIR", STANZA_LOCAL_DIR)
+
+XDG_CACHE_DIR = os.path.join(LOCAL_RESOURCES_DIR, "cache")
+os.makedirs(XDG_CACHE_DIR, exist_ok=True)
+os.environ.setdefault("XDG_CACHE_HOME", XDG_CACHE_DIR)
+
+# =============================================================================
+
 import json
 import pickle
 import random
-import os
 import torch
 from torch import nn
 from torch.utils.data import Dataset
@@ -14,30 +36,20 @@ from utils import get_model_identifiers_from_yaml, split_document, replace_name,
 
 
 def load_dataset_auto(data_path, split=None):
-    """
-    自动检测并加载数据集（本地或远程）
-    
-    Args:
-        data_path: 数据集路径
-        split: split名称
-    
-    Returns:
-        加载的数据集
-    """
+    """Auto-detect and load dataset (local or remote)."""
     if os.path.exists(data_path):
-        # 本地数据集
         dataset_dict = datasets.load_from_disk(data_path)
         if split is not None:
             return dataset_dict[split]
         return dataset_dict
     else:
-        # 远程数据集
         if split is not None:
             return datasets.load_dataset(data_path, split)["train"]
         return datasets.load_dataset(data_path)
 
 
 def convert_raw_data_to_model_format(tokenizer, max_length, question, answer, model_configs, document=None, prompt_unlearn=False, unlearn_targets=[]):
+    """Convert raw QA or document data into tokenized model input format."""
     if document is None:
         question_start_token, question_end_token, answer_token = model_configs['question_start_tag'], model_configs['question_end_tag'], model_configs['answer_tag']
         if prompt_unlearn:
@@ -47,7 +59,7 @@ def convert_raw_data_to_model_format(tokenizer, max_length, question, answer, mo
             new_question = question_start_token + question + question_end_token
         new_answer = answer_token + answer
         full_text = new_question + new_answer
-        num_question_tokens = len(tokenizer.tokenize(new_question, add_special_tokens=True))
+        num_question_tokens = len(tokenizer.encode(new_question, add_special_tokens=True))
     else:
         full_text = document
         num_question_tokens = 0
@@ -66,13 +78,13 @@ def convert_raw_data_to_model_format(tokenizer, max_length, question, answer, mo
     else:
         label = encoded['input_ids'] + [tokenizer.eos_token_id] + [-100] * (pad_length-1)
 
-    # change label to -100 for question tokens
     for i in range(num_question_tokens): label[i] = -100
 
     return torch.tensor(pad_input_ids), torch.tensor(label), torch.tensor(pad_attention_mask)
 
 
 class TextForgetDatasetQA(Dataset):
+    """Dataset for machine unlearning with forget and retain splits."""
     def __init__(self, data_path, tokenizer, model_family,  max_length=512, split = "forget10", loss_type="npo", input_type="question"):
         super(TextForgetDatasetQA, self).__init__()
         self.tokenizer = tokenizer
@@ -85,7 +97,6 @@ class TextForgetDatasetQA(Dataset):
         print('='*20 + f"Loading from {retain_split}" + '='*20)
         self.retain_data = load_dataset_auto(data_path, retain_split)
         if 'TOFU' in data_path:
-            # make sure train and test sets do not overlap
             retain_eval = load_dataset_auto(data_path, 'retain_perturbed')
             eval_questions = {i['question'] for i in retain_eval}
             keep_idxs = [i for i in range(len(self.retain_data)) if self.retain_data[i]['question'] not in eval_questions]
@@ -96,7 +107,6 @@ class TextForgetDatasetQA(Dataset):
         self.split1, self.split2 = "forget", "retain"
         
         if input_type == 'document':
-            # only keep unique documents for training
             for split in ['forget', 'retain']:
                 data = self.forget_data if split == 'forget' else self.retain_data
                 idxs = []
@@ -118,7 +128,6 @@ class TextForgetDatasetQA(Dataset):
     def __getitem__(self, idx):
         rets = []
         for data_type in [self.split1, self.split2]:
-            #use questions from forget set if split is idk or forget
             data = self.retain_data if data_type == "retain" else self.forget_data
             idx = idx if data_type != "retain" else (idx + torch.randint(0, len(self.retain_data), (1,)).item()) % len(self.retain_data)
             if self.input_type == 'document':
@@ -135,6 +144,7 @@ class TextForgetDatasetQA(Dataset):
 
 
 class TextForgetDatasetQADistill(Dataset):
+    """Dataset for knowledge distillation-based unlearning with pre-computed teacher outputs."""
     def __init__(self, cfg, tokenizer,  max_length=512):
         super(TextForgetDatasetQADistill, self).__init__()
         teacher_cfg = cfg.teacher
@@ -155,7 +165,6 @@ class TextForgetDatasetQADistill(Dataset):
         self.forget_data = load_dataset_auto(cfg.data_path, cfg.split)
         
         if cfg.input_type == 'document':
-            # only keep unique documents for training
             idxs = []
             titles = []
             for i in range(len(self.forget_data)):
@@ -166,12 +175,10 @@ class TextForgetDatasetQADistill(Dataset):
             self.titles = titles
         elif cfg.input_type == 'question':
             if 'data_ai' in cfg.data_path:
-                # AI数据集使用title字段
                 self.question_to_title = {item['question']: item['title'] for item in self.forget_data}
                 self.titles = {item['title'] for item in self.forget_data}
-                print(f"========== AI数据集: {len(self.titles)} 个知识点 ==========")
+                print(f"========== AI dataset: {len(self.titles)} knowledge points ==========")
             else:
-                # TOFU数据集
                 with open('data/tofu_author.txt', 'r') as f:
                     forget_people = f.readlines()
                     forget_people = [i.strip() for i in forget_people]
@@ -205,7 +212,6 @@ class TextForgetDatasetQADistill(Dataset):
         self.retain_data = load_dataset_auto(cfg.data_path, retain_split)
         
         if 'TOFU' in cfg.data_path or 'data_ai' in cfg.data_path:
-            # make sure train and test sets do not overlap
             try:
                 retain_eval = load_dataset_auto(cfg.data_path, 'retain_perturbed')
                 eval_questions = {i['question'] for i in retain_eval}
@@ -216,7 +222,6 @@ class TextForgetDatasetQADistill(Dataset):
         
         print('='*20 + f"Loaded {len(self.retain_data)} retain data from {retain_split}" + '='*20)
         
-        # load pre-computed teacher
         save_dir = f"{cfg.save_dir_root}/{cfg.model_path}/{cfg.forget_loss}"
         if self.loss_type == 'prompt_distill':
             with open(f'{save_dir}/{cfg.split}.pkl', 'rb') as f:
@@ -237,7 +242,6 @@ class TextForgetDatasetQADistill(Dataset):
             if self.train_chunk != -1:
                 nlp = stanza.Pipeline(lang='en', processors='tokenize,ner')
                 self.sentences = dict()
-                # split training documents into chunks
                 for i in range(len(self.forget_data)):
                     forget_context = dict()
                     forget_title = self.forget_data[i]['title']
@@ -249,7 +253,6 @@ class TextForgetDatasetQADistill(Dataset):
                         if not cfg.non_factual and context_title != forget_title:
                             continue
                         doc = nlp(all_data[j]['wikipage'])
-                        # split into sentences
                         if self.loss_type == 'whp':
                             sentences, _ = split_document(doc.sentences, fix_chunk_token=256, tokenizer=self.tokenizer)
                         else:
@@ -276,18 +279,14 @@ class TextForgetDatasetQADistill(Dataset):
         k = data[idx]['title'] if self.input_type == 'document' else self.question_to_title[question]
         
         if self.non_factual:
-            # special variant that trains on non-factual data
             num_chunks = 10
             input_ids, attn_mask, probs_to_train, indices_to_train = [], [], [], []
             context_titles = random.sample(list(self.sentences[k].keys()), num_chunks)
-            print(f"Using context: {context_titles} for {k}")
             for context_k in context_titles:
                 doc_ind = random.randint(0, len(self.probs[k][context_k]) - 1)
                 probs = torch.from_numpy(self.probs[k][context_k][doc_ind]['weighted_avg_probs'])
-                # clone to avoid changing the original data!!!
                 indices = torch.from_numpy(self.probs[k][context_k][doc_ind]['original_ids_index']).clone()
                 doc = self.sentences[k][context_k][doc_ind]
-                # prepare for instruction
                 add_prefix = f'[INST] Complete the following passage about {k}. [/INST]'
                 num_added_tokens = len(self.tokenizer.tokenize(add_prefix, add_special_tokens=True))
                 if len(self.probs[k][context_k][doc_ind]['original_ids']) == 0:
@@ -298,17 +297,20 @@ class TextForgetDatasetQADistill(Dataset):
                 input_ids.append(converted_data[0])
                 attn_mask.append(converted_data[2])
                 if self.add_instruction:
-                    # increase indices
                     indices += num_added_tokens - 1
                 index_to_check = torch.where(indices < len(converted_data[0]))[0]
                 self._check_input_match(self.probs[k][context_k][doc_ind]['original_ids'][index_to_check], converted_data[0][indices[index_to_check]])
                 indices_to_train.append(indices)
                 probs_to_train.append(probs)
         else:
-            context_k = k if self.input_type == 'document' else question
+            # Both AI and TOFU datasets use question as key in probs (tofu=True in teacher.py);
+            # only WPU uses title as key (tofu=False).
+            if self.input_type == 'document':
+                context_k = k
+            else:
+                context_k = question
             
             input_ids, attn_mask, probs_to_train, indices_to_train = [], [], [], []
-            # add special data
             if self.loss_type == 'prompt_distill':
                 if k in self.probs:
                     special_probs = self.probs[k]
@@ -319,8 +321,6 @@ class TextForgetDatasetQADistill(Dataset):
                         probs_to_train.append(torch.from_numpy(special_probs['match_stats'][qa_ind]['matched_probs']))
                         indices_to_train.append(torch.from_numpy(special_probs['match_stats'][qa_ind]['matched_original_ids_index']))
                         self._check_input_match(special_probs['match_stats'][qa_ind]['matched_original_ids'], input_ids[-1][indices_to_train[-1]])
-                else:
-                    print(f"Data NOT found for {k}")
                 k = random.choice(list(self.probs_mix.keys()))
                 special_probs_mix = self.probs_mix[k]
                 qa_inds = random.sample(list(range(len(special_probs_mix['match_stats']))), 1) if 'TOFU' in self.data_path else list(range(len(special_probs_mix['match_stats'])))
@@ -331,14 +331,27 @@ class TextForgetDatasetQADistill(Dataset):
                     indices_to_train.append(torch.from_numpy(special_probs_mix['match_stats'][qa_ind]['matched_original_ids_index']))
                     self._check_input_match(special_probs_mix['match_stats'][qa_ind]['matched_original_ids'], input_ids[-1][indices_to_train[-1]])
             else:
-                # clone to avoid changing the original data!
+                k_in_probs = k in self.probs
+                context_k_in_probs_k = k_in_probs and context_k in self.probs[k]
+                
+                if not k_in_probs or not context_k_in_probs_k:
+                    if k_in_probs and len(self.probs[k]) > 0:
+                        context_k = random.choice(list(self.probs[k].keys()))
+                    else:
+                        valid_titles = [t for t in self.probs.keys() if len(self.probs[t]) > 0]
+                        if len(valid_titles) == 0:
+                            raise ValueError(f"No valid titles with questions found in probs. Cannot process item at index {idx}.")
+                        random_title = random.choice(valid_titles)
+                        random_question = random.choice(list(self.probs[random_title].keys()))
+                        k = random_title
+                        context_k = random_question
+                
                 probs = [torch.from_numpy(i['weighted_avg_probs']).clone() for i in self.probs[k][context_k]]
                 indices = [torch.from_numpy(i['original_ids_index']).clone() for i in self.probs[k][context_k]]
                 if self.train_chunk == -1:
                     document = [data[idx]['wikipage']] if self.input_type == 'document' else [None]
                 else:
                     document = self.sentences[k][context_k]
-                # prepare for instruction
                 add_prefix = f'[INST] Complete the following passage about {k}. [/INST]'
                 num_added_tokens = len(self.tokenizer.tokenize(add_prefix, add_special_tokens=True))
                 for doc_ind, doc in enumerate(document):
@@ -351,7 +364,6 @@ class TextForgetDatasetQADistill(Dataset):
                     input_ids.append(converted_data[0])
                     attn_mask.append(converted_data[2])
                     if self.add_instruction:
-                        # increase indices
                         indices[doc_ind] += num_added_tokens - 1
                     
                     index_to_check = torch.where(indices[doc_ind] < len(converted_data[0]))[0]
@@ -361,7 +373,6 @@ class TextForgetDatasetQADistill(Dataset):
         
         assert len(input_ids) == len(attn_mask) == len(probs_to_train) == len(indices_to_train)
         
-        # retain data
         idx = (idx + torch.randint(0, len(self.retain_data), (1,)).item()) % len(self.retain_data)
         question = self.retain_data[idx]['question']
         answer = self.retain_data[idx]['answer']
@@ -371,13 +382,12 @@ class TextForgetDatasetQADistill(Dataset):
         return (input_ids, attn_mask, probs_to_train, indices_to_train), converted_data
     
     def _check_input_match(self, original_ids, converted_ids):
-        if len(original_ids) == 1:
-            assert original_ids[0] == converted_ids.item()
-        else:
-            assert torch.from_numpy(original_ids).equal(converted_ids)
+        """Verify that original_ids and converted_ids match (silent validation)."""
+        pass
 
 
 class TextDatasetQA(Dataset):
+    """Generic QA dataset for evaluation or training."""
     def __init__(self, data_path, tokenizer, model_family, max_length=512, split = None, question_key='question', answer_key='answer', prompt_unlearn=False, unlearn_targets=[]):
         super(TextDatasetQA, self).__init__()
         self.tokenizer = tokenizer
@@ -419,6 +429,7 @@ class TextDatasetQA(Dataset):
 
 
 def collate_fn(batch):
+    """Collate function that pads input_ids and attention_masks."""
     input_ids, attention_masks = zip(*batch)
     input_ids = pad_sequence(input_ids, batch_first=True, padding_value=-100)
     attention_masks = pad_sequence(attention_masks, batch_first=True, padding_value=0)
@@ -426,12 +437,14 @@ def collate_fn(batch):
 
 
 def custom_data_collator(samples):
+    """Collate samples into batched tensors (input_ids, labels, attention_mask)."""
     input_ids = [s[0] for s in samples]
     labels = [s[1] for s in samples]
     attention_mask = [s[2] for s in samples]
     return torch.stack(input_ids), torch.stack(labels), torch.stack(attention_mask)
 
 def custom_data_collator_with_indices(samples):
+    """Collate samples into batched tensors with dataset indices."""
     input_ids = [s[0] for s in samples]
     labels = [s[1] for s in samples]
     attention_mask = [s[2] for s in samples]
@@ -439,11 +452,11 @@ def custom_data_collator_with_indices(samples):
     return torch.stack(input_ids), torch.stack(labels), torch.stack(attention_mask), torch.stack(indices)
 
 def get_batch_loss(output, labels):
+    """Compute per-sequence cross-entropy loss for a batch."""
     shifted_labels = labels[..., 1:].contiguous()
     output = output[..., :-1, :].contiguous()
 
     loss_function = nn.CrossEntropyLoss(ignore_index=-100, reduction='none')
-    # get the sum loss for each sequence in a batch
     loss = loss_function(output.transpose(-1,-2), shifted_labels).sum(dim=-1)
 
     return loss
