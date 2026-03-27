@@ -420,11 +420,8 @@ def main(cfg):
         forget_target_name = False
         additional_target_type = []
         tofu = True
-        if 'data_ai_progressive' in cfg.data_path:
-            replace_name_file = 'data_construct/data/replace_knowledge_points_v2.json'
-        else:
-            replace_name_file = 'data/replace_knowledge_points.json'
-        with open('data/ai_knowledge_points.txt', 'r', encoding='utf-8') as f:
+        replace_name_file = 'data_construct/data/replace_knowledge_points_v2.json'
+        with open('data_construct/data/ai_knowledge_points.txt', 'r', encoding='utf-8') as f:
             forget_knowledge_points = [line.strip() for line in f if line.strip()]
         question_to_title = {item['question']: item['title'].strip() for item in dataset}
         titles = {item['title'].strip() for item in dataset}

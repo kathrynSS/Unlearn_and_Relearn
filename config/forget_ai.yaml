@@ -8,7 +8,7 @@ LoRA:
 
 lr: 1e-5
 split: forget
-data_path: data/data_ai_v2  # 使用基于错误选项的「新版」数据集
+data_path: data_construct/data/data_ai_progressive
 input_type: question
 sentence_chunk: -1
 retain_strength: 0.0
@@ -29,7 +29,7 @@ eval:
   model_path: ${..model_path}
   model_family: ${..model_family}
   save_dir: ${..save_dir}
-  data_path: [data/data_ai_v2, data/data_ai_v2, data/data_ai_v2, data/data_ai_v2]
+  data_path: [data_construct/data/data_ai_progressive, data_construct/data/data_ai_progressive, data_construct/data/data_ai_progressive, data_construct/data/data_ai_progressive]
   split: ${..split}_perturbed
   split_list:
     - retain_perturbed
