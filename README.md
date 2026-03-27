@@ -8,9 +8,7 @@ This project implements a framework for simulating novice student behavior in LL
 2. **Relearning** -- Recover the forgotten knowledge via either standard LoRA fine-tuning or an LLM-based Teacher Agent that provides interactive, multi-turn feedback.
 3. **Evaluation** -- Measure knowledge retention and recovery on both forgotten and retained topics using MCQ accuracy and F1 scores.
 
-<p align="center">
-  <img src="pic/pic2.png" width="90%">
-</p>
+![Overview](pic/pic2.png)
 
 ## Requirements
 
@@ -32,7 +30,7 @@ export OPENAI_BASE_URL="https://api.deepseek.com/v1"
 
 ## Usage
 
-All training scripts use [Hydra](https://hydra.cc/) for configuration. Parameters can be overridden on the command line. The dataset supports progressive forget splits: `forget_10`, `forget_20`, ..., `forget_50` (representing 10%--50% of knowledge points).
+ The dataset supports progressive forget splits: `forget_10`, `forget_20`, ..., `forget_50` (representing 10%--50% of knowledge points).
 
 ### Step 1: Generate Teacher Distribution
 
@@ -97,9 +95,7 @@ python relearn_by_llm.py --config-name=relearn_ai_llm \
 
 The LLM-guided approach uses a three-party interactive loop: a Coach Agent poses questions, the Teachable Agent (unlearned model) answers, and a Judge Agent evaluates. If incorrect, the model is immediately fine-tuned via LoRA before the next round (up to 4 rounds per question).
 
-<p align="center">
-  <img src="pic/pic1.png" width="90%">
-</p>
+![LLM-guided Relearning](pic/pic1.png)
 
 ### Step 4: Evaluation
 
@@ -144,5 +140,3 @@ This compares the original base model and the target model on multiple-choice ac
 ## License
 
 This project is licensed under the MIT License.
-# Unlearn_and_Relearn
-# Unlearn_and_Relearn
