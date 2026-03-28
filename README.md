@@ -137,7 +137,11 @@ This compares the original base model and the target model on multiple-choice ac
 
 ## Supplementary Materials
 
-The file [pic/pic5.pdf](pic/pic5.pdf) provides supplementary materials for the visualization presented in Figure 4 in the paper.
+<p align="center">
+  <img src="pic/pic3.png" width="70%">
+</p>
+
+Supplementary materials for the visualization presented in Figure 4 in the paper.
 
 ## License
 
