@@ -1,6 +1,6 @@
 # Simulating Novice Students Using Machine Unlearning and Relearning in Large Language Models
 
-[![Paper](https://img.shields.io/badge/Paper-Coming%20Soon-red)](https://arxiv.org/)
+[![Paper](https://img.shields.io/badge/Paper-arXiv%202603.26142-red)](https://arxiv.org/abs/2603.26142)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -133,6 +133,22 @@ This compares the original base model and the target model on multiple-choice ac
 └── chat_analysis/
     ├── chat_learning_loop_2.py         # 3-party interactive learning system
     └── prompt/                         # Prompt templates for DeepSeek agents
+```
+
+## Citation
+
+If you find this work useful in your research or applications, please kindly cite:
+
+```bibtex
+@misc{song2026simulatingnovicestudentsusing,
+      title={Simulating Novice Students Using Machine Unlearning and Relearning in Large Language Models}, 
+      author={Jiajia Song and Zhihan Guo and Jionghao Lin},
+      year={2026},
+      eprint={2603.26142},
+      archivePrefix={arXiv},
+      primaryClass={cs.HC},
+      url={https://arxiv.org/abs/2603.26142}, 
+}
 ```
 
 ## License
