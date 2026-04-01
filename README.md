@@ -7,8 +7,6 @@
 
 ## Overview
 
-This project implements a framework for simulating novice student behavior in LLMs through a three-stage pipeline:
-
 This project implements a framework for simulating novice student behavior in LLMs through three stages: Stage 1. Machine Unlearning, Stage 2. Machine Relearning, and Stage 3. Teachable-Agent Interaction.
 
 <p align="center">
